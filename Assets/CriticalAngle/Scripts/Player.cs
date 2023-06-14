@@ -35,15 +35,18 @@ namespace CriticalAngleStudios
 
         private bool isGrounded;
         private bool wasGrounded;
+        private readonly Dictionary<GameObject, Vector3> collisions = new();
         
         private Vector2 inputRotation;
         private float desiredSpeed;
         private Vector3 groundNormal;
+        
         private bool shouldJump;
+        
         private bool waitUntilGrounded;
-        private readonly Dictionary<GameObject, Vector3> collisions = new();
         private bool isFullyCrouched;
         private bool transitioningCrouch;
+        
 
         private void Awake()
         {
