@@ -2,74 +2,87 @@ using System.Collections;
 using System.Collections.Generic;
 using Unity.VisualScripting;
 using UnityEngine;
+using UnityEngine.ProBuilder.MeshOperations;
+using UnityEngine.Serialization;
 
 namespace CriticalAngleStudios
 {
     [RequireComponent(typeof(Rigidbody))]
+    [RequireComponent(typeof(CapsuleCollider))]
     public class Player : MonoBehaviour
     {
         [SerializeField] private float walkSpeed = 6.0f;
-        [SerializeField] private float crouchSpeed = 5.0f;
-        
-        [Space]
-        
-        [SerializeField] private float timeToCrouch = 0.15f;
-        [SerializeField] private float standingHeight = 0.75f;
-        [SerializeField] private float crouchHeight = 0.25f;
-        [SerializeField] private float cameraOffset = -0.25f;
-        
-        [Space]
-        
-        [SerializeField] private float maxSlopeAngle = 45.0f;
+        [SerializeField] private float crouchSpeed = 3.0f;
+
+        [Space] [SerializeField] private float timeToCrouch = 0.2f;
+        [SerializeField] private float cameraStandingHeight = 0.75f;
+        [SerializeField] private float cameraCrouchHeight = 0.25f;
+
+        [Space] [SerializeField] private float maxSlopeAngle = 45.0f;
         [SerializeField] private float jumpHeight = 1.0f;
-        [SerializeField] private float crouchJumpMultiplier = 1.5f;
         [SerializeField] private float maxAirAcceleration = 1.0f;
         [SerializeField] private float airAcceleration = 10.0f;
-        
-        [Space]
-        
-        [SerializeField] private float sensitivity = 1.0f;
+        [SerializeField] private float rampSlideVelocity = 5.0f;
+        [SerializeField] private bool canHoldJump;
+
+        [Space] [SerializeField] private float cameraSensitivity = 1.0f;
         [SerializeField] private new Transform camera;
+        [SerializeField] private new CapsuleCollider collider;
+        [SerializeField] private LayerMask groundMask;
 
         private new Rigidbody rigidbody;
 
         private bool isGrounded;
         private bool wasGrounded;
         private readonly Dictionary<GameObject, Vector3> collisions = new();
-        
+
         private Vector2 inputRotation;
         private float desiredSpeed;
         private Vector3 groundNormal;
-        
+
         private bool shouldJump;
-        
-        private bool waitUntilGrounded;
-        private bool isFullyCrouched;
-        private bool transitioningCrouch;
-        
+
+        private bool isCrouched;
+        private bool isTransitioningCrouch;
+        private bool shouldCancelCrouchTransition;
 
         private void Awake()
         {
             this.rigidbody = this.GetComponent<Rigidbody>();
 
             this.isGrounded = true;
-        
+
             Cursor.visible = false;
             Cursor.lockState = CursorLockMode.Locked;
         }
 
         private void Update()
         {
-            this.GetDesiredSpeed();
-            this.GetDesiredRotation();
+            this.SetDesiredSpeed();
+            this.SetDesiredRotation();
 
-            if (this.IsJumpingInput())
-                this.shouldJump = this.isGrounded;
+            if (this.isGrounded)
+            {
+                if (this.JumpInput())
+                    this.shouldJump = true;
 
-            if (this.IsCrouchingInput() && !this.isFullyCrouched && !this.transitioningCrouch && this.isGrounded)
-                this.StartCoroutine(this.Crouch());
-            else if (!this.IsCrouchingInput() && this.isFullyCrouched && !this.transitioningCrouch)
-                this.StartCoroutine(this.UnCrouch());
+                if (!this.isTransitioningCrouch)
+                {
+                    if (this.CrouchInput()
+                        && !this.isCrouched)
+                        this.StartCoroutine(this.Crouch());
+                    else if (!this.CrouchInput()
+                             && this.isCrouched)
+                        this.StartCoroutine(this.UnCrouch());
+                }
+            }
+            else
+            {
+                if (this.CrouchInput() && !this.isCrouched)
+                    this.AirCrouch();
+                else if (!this.CrouchInput() && this.isCrouched)
+                    this.AirUnCrouch();
+            }
 
             this.camera.transform.localEulerAngles = new Vector3(this.inputRotation.x, 0.0f, 0.0f);
             this.rigidbody.MoveRotation(Quaternion.Euler(0.0f, this.inputRotation.y, 0.0f));
@@ -79,18 +92,19 @@ namespace CriticalAngleStudios
         {
             this.GroundCheck();
 
-            if (this.shouldJump)
+            if (this.isGrounded && !this.wasGrounded && this.isCrouched)
+                this.AirCrouchToCrouch();
+
+            if (this.shouldJump && this.isGrounded)
+            {
                 this.Jump();
+            }
             else
             {
-                var balanceForce = Vector3.down - Vector3.Project(Vector3.down, this.groundNormal);
-                balanceForce.Normalize();
-        
-                var angle = Vector3.Angle(Vector3.down, this.groundNormal) * Mathf.Deg2Rad;
-                balanceForce *= Physics.gravity.y * Mathf.Sin(angle);
-                this.rigidbody.AddForce(balanceForce, ForceMode.Acceleration);
-                
-                if (this.isGrounded)
+                if (!this.isGrounded && this.wasGrounded && this.isCrouched)
+                    this.CrouchToAirCrouch();
+
+                if (this.isGrounded && this.wasGrounded)
                     this.GroundAccelerate();
                 else
                     this.AirAccelerate();
@@ -101,29 +115,36 @@ namespace CriticalAngleStudios
 
         private void OnCollisionEnter(Collision collision) =>
             this.collisions.Add(collision.gameObject, collision.GetContact(0).normal);
+
         private void OnCollisionStay(Collision collision) =>
             this.collisions[collision.gameObject] = collision.GetContact(0).normal;
+
         private void OnCollisionExit(Collision collision) =>
             this.collisions.Remove(collision.gameObject);
 
         private void GroundCheck()
         {
-            var newNormal = Vector3.zero;
-            var isGroundedTmp = false;
-            foreach (var (_, normal) in this.collisions)
+            if (this.rigidbody.velocity.y > this.rampSlideVelocity)
             {
+                this.isGrounded = false;
+                return;
+            }
+
+            var combinedNormals = Vector3.zero;
+            var isGroundedTmp = false;
+            foreach (var (obj, normal) in this.collisions)
+            {
+                if ((this.groundMask & (1 << obj.layer)) == 0) continue;
+
                 var angle = Vector3.Angle(Vector3.up, normal);
                 if (angle > this.maxSlopeAngle) continue;
-            
-                newNormal += normal;
+
+                combinedNormals += normal;
                 isGroundedTmp = true;
             }
 
-            this.groundNormal = newNormal;
+            this.groundNormal = combinedNormals;
             this.isGrounded = isGroundedTmp;
-
-            if (this.waitUntilGrounded && this.isGrounded && !this.wasGrounded)
-                this.waitUntilGrounded = false;
         }
 
         private Vector3 GetInputDirection()
@@ -134,36 +155,52 @@ namespace CriticalAngleStudios
             return this.transform.TransformDirection(input);
         }
 
-        private void GetDesiredSpeed()
+        private void SetDesiredSpeed()
         {
-            this.desiredSpeed = this.isFullyCrouched ? this.crouchSpeed : this.walkSpeed;
+            this.desiredSpeed = this.isCrouched ? this.crouchSpeed : this.walkSpeed;
         }
 
-        private void GetDesiredRotation()
+        private void SetDesiredRotation()
         {
-            this.inputRotation.x -= Input.GetAxis("Mouse Y") * this.sensitivity;
-            this.inputRotation.y += Input.GetAxis("Mouse X") * this.sensitivity;
-            
+            this.inputRotation.x -= Input.GetAxis("Mouse Y") * this.cameraSensitivity;
+            this.inputRotation.y += Input.GetAxis("Mouse X") * this.cameraSensitivity;
+
             this.inputRotation.x = Mathf.Clamp(this.inputRotation.x, -90.0f, 90.0f);
         }
 
         private void GroundAccelerate()
         {
+            // Stop the player from sliding down ramps
+
+            // Gets the direction up the ramp
+            var balanceForce = Vector3.down - Vector3.Project(Vector3.down, this.groundNormal);
+            balanceForce.Normalize();
+
+            // Uses trig to calculate the effect of gravity on the player on any given ramp
+            var angle = Vector3.Angle(Vector3.down, this.groundNormal) * Mathf.Deg2Rad;
+            balanceForce *= Physics.gravity.y * Mathf.Sin(angle);
+            this.rigidbody.AddForce(balanceForce, ForceMode.Acceleration);
+
+            // Calculates acceleration needed to maintain speed using physics equations
             // acceleration = (desired velocity - previous velocity) / delta time
             var force = (this.desiredSpeed * this.GetInputDirection() - this.rigidbody.velocity) / Time.deltaTime;
             force.y = 0.0f;
 
+            // Walk up ramps
             // proj_normal force = (force * normal) / ||normal||^2 * normal
             var normalProjection =
                 Vector3.Dot(force, this.groundNormal) / this.groundNormal.sqrMagnitude * this.groundNormal;
             var proj = force - normalProjection;
-        
-            if (!float.IsNaN(proj.x) && !float.IsNaN(proj.y) && !float.IsNaN(proj.z)) 
+
+            if (!float.IsNaN(proj.x) && !float.IsNaN(proj.y) && !float.IsNaN(proj.z))
                 this.rigidbody.AddForce(proj);
         }
-    
+
+
         private void AirAccelerate()
         {
+            // Don't you dare force me to explain this because I cannot
+            // This was taken right from the Source Engine repository
             var direction = this.GetInputDirection();
             var velocity = this.rigidbody.velocity;
             var magnitude = velocity.magnitude;
@@ -194,58 +231,124 @@ namespace CriticalAngleStudios
         private void Jump()
         {
             this.shouldJump = false;
-            if (!this.isGrounded || this.waitUntilGrounded || this.transitioningCrouch) return;
-            
-            this.waitUntilGrounded = true;
+            if (this.isCrouched) return;
+
+            if (this.isTransitioningCrouch)
+                this.HandleJumpFromCrouch();
 
             var height = this.jumpHeight;
-            
-            if (this.isFullyCrouched)
-            {
-                this.StartCoroutine(this.UnCrouch());
-                height *= this.crouchJumpMultiplier;
-            }
 
             var force = Mathf.Sqrt(height * -2.0f * Physics.gravity.y) - this.rigidbody.velocity.y;
             this.rigidbody.AddForce(0.0f, force, 0.0f, ForceMode.VelocityChange);
         }
 
+        private void HandleJumpFromCrouch()
+        {
+            this.shouldCancelCrouchTransition = true;
+            this.camera.localPosition = new Vector3(0.0f, this.cameraStandingHeight);
+
+            this.isTransitioningCrouch = false;
+            this.AirCrouch();
+        }
+
+        private void AirCrouch()
+        {
+            this.collider.height = 1.5f;
+            this.collider.center = new Vector3(0.0f, 0.25f);
+
+            if (this.isTransitioningCrouch)
+                this.shouldCancelCrouchTransition = true;
+
+            this.isCrouched = true;
+        }
+
+        private void AirUnCrouch()
+        {
+            if (Physics.SphereCast(this.transform.position + this.collider.center, this.collider.radius - 0.001f,
+                    Physics.gravity.normalized, out _, 0.75f)) return;
+
+            this.collider.height = 2.0f;
+            this.collider.center = Vector3.zero;
+
+            this.isCrouched = false;
+        }
+
+        private void AirCrouchToCrouch()
+        {
+            this.rigidbody.position += new Vector3(0.0f, 0.5f);
+            this.collider.center = new Vector3(0.0f, -0.25f);
+            this.camera.localPosition = new Vector3(0.0f, this.cameraCrouchHeight);
+        }
+
+        private void CrouchToAirCrouch()
+        {
+            this.rigidbody.position -= new Vector3(0.0f, 0.5f);
+            this.collider.center = new Vector3(0.0f, 0.25f);
+            this.camera.localPosition = new Vector3(0.0f, this.cameraStandingHeight);
+        }
+
         private IEnumerator Crouch()
         {
             var time = 0.0f;
-            this.transitioningCrouch = true;
-            
+            this.isTransitioningCrouch = true;
+
             while (time <= this.timeToCrouch)
             {
-                var lerp = Mathf.Lerp(this.standingHeight, this.crouchHeight, EaseInOut(time / this.timeToCrouch));
-                this.camera.transform.localPosition = new Vector3(0.0f, lerp + this.cameraOffset, 0.0f);
+                if (!this.isGrounded)
+                {
+                    this.camera.localPosition = new Vector3(0.0f, this.cameraStandingHeight);
+                    this.AirCrouch();
+                }
+
+                if (this.shouldCancelCrouchTransition)
+                {
+                    this.shouldCancelCrouchTransition = false;
+                    yield break;
+                }
+
+                var lerp = Mathf.Lerp(this.cameraStandingHeight, this.cameraCrouchHeight,
+                    EaseInOut(time / this.timeToCrouch));
+                this.camera.localPosition = new Vector3(0.0f, lerp, 0.0f);
 
                 time += Time.deltaTime;
 
                 yield return null;
             }
-            
-            this.transitioningCrouch = false;
-            this.isFullyCrouched = true;
+
+            this.collider.height = 1.5f;
+            this.collider.center = new Vector3(0.0f, -0.25f);
+
+            this.isTransitioningCrouch = false;
+            this.isCrouched = true;
         }
-        
+
         private IEnumerator UnCrouch()
         {
             var time = 0.0f;
-            this.transitioningCrouch = true;
-            
+            this.isTransitioningCrouch = true;
+
             while (time <= this.timeToCrouch)
             {
-                var lerp = Mathf.Lerp(this.crouchHeight, this.standingHeight, EaseInOut(time / this.timeToCrouch));
-                this.camera.transform.localPosition = new Vector3(0.0f, lerp + this.cameraOffset, 0.0f);
+                if (this.shouldCancelCrouchTransition)
+                {
+                    this.shouldCancelCrouchTransition = false;
+                    yield break;
+                }
+
+                var lerp = Mathf.Lerp(this.cameraCrouchHeight, this.cameraStandingHeight,
+                    EaseInOut(time / this.timeToCrouch));
+                this.camera.localPosition = new Vector3(0.0f, lerp, 0.0f);
 
                 time += Time.deltaTime;
 
                 yield return null;
             }
-            
-            this.transitioningCrouch = false;
-            this.isFullyCrouched = false;
+
+            this.collider.height = 2.0f;
+            this.collider.center = Vector3.zero;
+
+            this.isTransitioningCrouch = false;
+            this.isCrouched = false;
         }
 
         private static float EaseInOut(float x)
@@ -253,14 +356,7 @@ namespace CriticalAngleStudios
             return -(Mathf.Cos(Mathf.PI * x) - 1.0f) / 2.0f;
         }
 
-        private bool IsJumpingInput()
-        {
-            return Input.GetKey(KeyCode.Space);
-        }
-    
-        private bool IsCrouchingInput()
-        {
-            return Input.GetKey(KeyCode.LeftControl);
-        }
+        private bool JumpInput() => this.canHoldJump ? Input.GetKey(KeyCode.Space) : Input.GetKeyDown(KeyCode.Space);
+        private bool CrouchInput() => Input.GetKey(KeyCode.LeftControl);
     }
 }
