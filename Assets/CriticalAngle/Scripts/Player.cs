@@ -124,12 +124,14 @@ namespace CriticalAngleStudios
 
         private void GroundCheck()
         {
+            // Replication of Quake's undocumented feature of ramp sliding when exceeding a certain velocity
             if (this.rigidbody.velocity.y > this.rampSlideVelocity)
             {
                 this.isGrounded = false;
                 return;
             }
 
+            // Iterates through every object that we are colliding with to get the average ground normal
             var combinedNormals = Vector3.zero;
             var isGroundedTmp = false;
             foreach (var (obj, normal) in this.collisions)
@@ -155,10 +157,8 @@ namespace CriticalAngleStudios
             return this.transform.TransformDirection(input);
         }
 
-        private void SetDesiredSpeed()
-        {
+        private void SetDesiredSpeed() =>
             this.desiredSpeed = this.isCrouched ? this.crouchSpeed : this.walkSpeed;
-        }
 
         private void SetDesiredRotation()
         {
@@ -199,7 +199,7 @@ namespace CriticalAngleStudios
 
         private void AirAccelerate()
         {
-            // Don't you dare force me to explain this because I cannot
+            // Don't even dare force me to explain this because I cannot
             // This was taken right from the Source Engine repository
             var direction = this.GetInputDirection();
             var velocity = this.rigidbody.velocity;
@@ -238,10 +238,12 @@ namespace CriticalAngleStudios
 
             var height = this.jumpHeight;
 
+            // Simple calculation for jump force
             var force = Mathf.Sqrt(height * -2.0f * Physics.gravity.y) - this.rigidbody.velocity.y;
             this.rigidbody.AddForce(0.0f, force, 0.0f, ForceMode.VelocityChange);
         }
 
+        // These next few functions are self-documenting
         private void HandleJumpFromCrouch()
         {
             this.shouldCancelCrouchTransition = true;
@@ -294,6 +296,7 @@ namespace CriticalAngleStudios
 
             while (time <= this.timeToCrouch)
             {
+                // If, while we are in the process of crouching, we fall off a cliff, transition to an air crouch
                 if (!this.isGrounded)
                 {
                     this.camera.localPosition = new Vector3(0.0f, this.cameraStandingHeight);
@@ -351,10 +354,7 @@ namespace CriticalAngleStudios
             this.isCrouched = false;
         }
 
-        private static float EaseInOut(float x)
-        {
-            return -(Mathf.Cos(Mathf.PI * x) - 1.0f) / 2.0f;
-        }
+        private static float EaseInOut(float x) => -(Mathf.Cos(Mathf.PI * x) - 1.0f) / 2.0f;
 
         private bool JumpInput() => this.canHoldJump ? Input.GetKey(KeyCode.Space) : Input.GetKeyDown(KeyCode.Space);
         private bool CrouchInput() => Input.GetKey(KeyCode.LeftControl);
