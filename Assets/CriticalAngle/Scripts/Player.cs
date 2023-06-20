@@ -115,10 +115,18 @@ namespace CriticalAngleStudios
         {
             this.GroundCheck();
 
-            if (this.isGrounded && !this.wasGrounded && this.isCrouched)
-                this.AirCrouchToCrouch();
+            if (this.isGrounded && !this.wasGrounded)
+            {
+                if (this.isCrouched)
+                    this.AirCrouchToCrouch();
 
-            if (this.shouldJump && this.isGrounded)
+                var groundAngle = Vector3.Angle(Vector3.up, this.groundNormal);
+                var magnitude = this.rigidbody.mass * Mathf.Sin(groundAngle * Mathf.Deg2Rad) * -Physics.gravity.y;
+                var force = magnitude * this.groundNormal;
+                this.rigidbody.AddForce(-force);
+            }
+
+            if (this.shouldJump && this.isGrounded && !this.isCrouched)
             {
                 this.Jump();
             }
@@ -255,10 +263,6 @@ namespace CriticalAngleStudios
         private void Jump()
         {
             this.shouldJump = false;
-            if (this.isCrouched) return;
-
-            if (this.isTransitioningCrouch)
-                this.HandleJumpFromCrouch();
 
             var height = this.jumpHeight;
 
@@ -268,15 +272,6 @@ namespace CriticalAngleStudios
         }
 
         // These next few functions are self-documenting
-        private void HandleJumpFromCrouch()
-        {
-            this.shouldCancelCrouchTransition = true;
-            this.camera.localPosition = new Vector3(0.0f, this.cameraStandingHeight);
-
-            this.isTransitioningCrouch = false;
-            this.AirCrouch();
-        }
-
         private void AirCrouch()
         {
             this.collider.height = 1.5f;
@@ -285,6 +280,7 @@ namespace CriticalAngleStudios
             if (this.isTransitioningCrouch)
                 this.shouldCancelCrouchTransition = true;
 
+            this.isTransitioningCrouch = false;
             this.isCrouched = true;
         }
 
@@ -296,19 +292,23 @@ namespace CriticalAngleStudios
             this.collider.height = 2.0f;
             this.collider.center = Vector3.zero;
 
+            if (this.isTransitioningCrouch)
+                this.shouldCancelCrouchTransition = true;
+
+            this.isTransitioningCrouch = false;
             this.isCrouched = false;
         }
 
         private void AirCrouchToCrouch()
         {
-            this.rigidbody.position += new Vector3(0.0f, 0.5f);
+            this.transform.position += new Vector3(0.0f, 0.5f);
             this.collider.center = new Vector3(0.0f, -0.25f);
             this.camera.localPosition = new Vector3(0.0f, this.cameraCrouchHeight);
         }
 
         private void CrouchToAirCrouch()
         {
-            this.rigidbody.position -= new Vector3(0.0f, 0.5f);
+            this.transform.position -= new Vector3(0.0f, 0.5f);
             this.collider.center = new Vector3(0.0f, 0.25f);
             this.camera.localPosition = new Vector3(0.0f, this.cameraStandingHeight);
         }
@@ -323,7 +323,9 @@ namespace CriticalAngleStudios
                 // If, while we are in the process of crouching, we fall off a cliff, transition to an air crouch
                 if (!this.isGrounded)
                 {
+                    var difference = this.cameraStandingHeight - this.camera.localPosition.y;
                     this.camera.localPosition = new Vector3(0.0f, this.cameraStandingHeight);
+                    this.transform.position -= new Vector3(0.0f, difference);
                     this.AirCrouch();
                 }
 
@@ -356,6 +358,13 @@ namespace CriticalAngleStudios
 
             while (time <= this.timeToCrouch)
             {
+                // If, while we are in the process of un-crouching, we fall off a cliff, transition to airborne standing
+                if (!this.isGrounded)
+                {
+                    this.camera.localPosition = new Vector3(0.0f, this.cameraStandingHeight);
+                    this.AirUnCrouch();
+                }
+                
                 if (this.shouldCancelCrouchTransition)
                 {
                     this.shouldCancelCrouchTransition = false;
