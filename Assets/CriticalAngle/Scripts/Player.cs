@@ -1,9 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
-using Unity.VisualScripting;
 using UnityEngine;
-using UnityEngine.ProBuilder.MeshOperations;
-using UnityEngine.Serialization;
+using UnityEngine.InputSystem;
 
 namespace CriticalAngleStudios
 {
@@ -31,12 +29,16 @@ namespace CriticalAngleStudios
         [SerializeField] private LayerMask groundMask;
 
         private new Rigidbody rigidbody;
+        private PlayerInputControls inputControls;
 
         private bool isGrounded;
         private bool wasGrounded;
         private readonly Dictionary<GameObject, Vector3> collisions = new();
 
-        private Vector2 inputRotation;
+        private Vector2 rotationInput;
+        private bool crouchInput;
+        private bool jumpInput;
+        
         private float desiredSpeed;
         private Vector3 groundNormal;
 
@@ -50,10 +52,29 @@ namespace CriticalAngleStudios
         {
             this.rigidbody = this.GetComponent<Rigidbody>();
 
+            this.inputControls = new PlayerInputControls();
+            this.inputControls.Enable();
+
+            this.inputControls.Player.Jump.performed += _ =>
+            {
+                this.shouldJump = true;
+                this.jumpInput = true;
+            };
+            this.inputControls.Player.Jump.canceled += _ => this.jumpInput = false;
+            
+            this.inputControls.Player.Crouch.performed += _ => this.crouchInput = true;
+            this.inputControls.Player.Crouch.canceled += _ => this.crouchInput = false;
+
             this.isGrounded = true;
 
             Cursor.visible = false;
             Cursor.lockState = CursorLockMode.Locked;
+        }
+
+        private void OnDestroy()
+        {
+            this.inputControls.Disable();
+            this.inputControls.Dispose();
         }
 
         private void Update()
@@ -63,29 +84,31 @@ namespace CriticalAngleStudios
 
             if (this.isGrounded)
             {
-                if (this.JumpInput())
+                if (this.canHoldJump && this.jumpInput)
                     this.shouldJump = true;
-
+                
                 if (!this.isTransitioningCrouch)
                 {
-                    if (this.CrouchInput()
+                    if (this.crouchInput
                         && !this.isCrouched)
                         this.StartCoroutine(this.Crouch());
-                    else if (!this.CrouchInput()
+                    else if (!this.crouchInput
                              && this.isCrouched)
                         this.StartCoroutine(this.UnCrouch());
                 }
             }
             else
             {
-                if (this.CrouchInput() && !this.isCrouched)
+                if (this.crouchInput && !this.isCrouched)
                     this.AirCrouch();
-                else if (!this.CrouchInput() && this.isCrouched)
+                else if (!this.crouchInput && this.isCrouched)
                     this.AirUnCrouch();
+
+                this.shouldJump = false;
             }
 
-            this.camera.transform.localEulerAngles = new Vector3(this.inputRotation.x, 0.0f, 0.0f);
-            this.rigidbody.MoveRotation(Quaternion.Euler(0.0f, this.inputRotation.y, 0.0f));
+            this.camera.transform.localEulerAngles = new Vector3(this.rotationInput.x, 0.0f, 0.0f);
+            this.rigidbody.MoveRotation(Quaternion.Euler(0.0f, this.rotationInput.y, 0.0f));
         }
 
         private void FixedUpdate()
@@ -151,8 +174,8 @@ namespace CriticalAngleStudios
 
         private Vector3 GetInputDirection()
         {
-            var input = new Vector3(Input.GetAxisRaw("Horizontal"), 0.0f, Input.GetAxisRaw("Vertical"));
-            input.Normalize();
+            var movement = this.inputControls.Player.Movement.ReadValue<Vector2>();
+            var input = new Vector3(movement.x, 0.0f, movement.y);
 
             return this.transform.TransformDirection(input);
         }
@@ -162,10 +185,11 @@ namespace CriticalAngleStudios
 
         private void SetDesiredRotation()
         {
-            this.inputRotation.x -= Input.GetAxis("Mouse Y") * this.cameraSensitivity;
-            this.inputRotation.y += Input.GetAxis("Mouse X") * this.cameraSensitivity;
+            var look = this.inputControls.Player.Look.ReadValue<Vector2>();
+            this.rotationInput.x -= look.y * this.cameraSensitivity;
+            this.rotationInput.y += look.x * this.cameraSensitivity;
 
-            this.inputRotation.x = Mathf.Clamp(this.inputRotation.x, -90.0f, 90.0f);
+            this.rotationInput.x = Mathf.Clamp(this.rotationInput.x, -90.0f, 90.0f);
         }
 
         private void GroundAccelerate()
@@ -355,8 +379,5 @@ namespace CriticalAngleStudios
         }
 
         private static float EaseInOut(float x) => -(Mathf.Cos(Mathf.PI * x) - 1.0f) / 2.0f;
-
-        private bool JumpInput() => this.canHoldJump ? Input.GetKey(KeyCode.Space) : Input.GetKeyDown(KeyCode.Space);
-        private bool CrouchInput() => Input.GetKey(KeyCode.LeftControl);
     }
 }
