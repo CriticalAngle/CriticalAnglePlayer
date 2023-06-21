@@ -18,11 +18,11 @@ namespace CriticalAngleStudios
         [SerializeField] private float colliderStandingHeight = 2.0f;
         [SerializeField] private float cameraCrouchHeight = 0.25f;
         [SerializeField] private float colliderCrouchHeight = 1.5f;
-        
+
         [Space] [SerializeField] private bool canJump = true;
         [SerializeField] private bool canHoldJump = true;
         [SerializeField] private float jumpHeight = 1.0f;
-        
+
         [Space] [SerializeField] private float maxSlopeAngle = 45.0f;
         [SerializeField] private float maxAirAcceleration = 1.0f;
         [SerializeField] private float airAcceleration = 10.0f;
@@ -94,16 +94,17 @@ namespace CriticalAngleStudios
             {
                 if (this.isGrounded)
                 {
-                    if (this.isTransitioningCrouch) return;
-
-                    switch (this.crouchInput)
+                    if (this.isTransitioningCrouch)
                     {
-                        case true when !this.isCrouched:
-                            this.StartCoroutine(this.Crouch());
-                            break;
-                        case false when this.isCrouched:
-                            this.StartCoroutine(this.UnCrouch());
-                            break;
+                        switch (this.crouchInput)
+                        {
+                            case true when !this.isCrouched:
+                                this.StartCoroutine(this.Crouch());
+                                break;
+                            case false when this.isCrouched:
+                                this.StartCoroutine(this.UnCrouch());
+                                break;
+                        }
                     }
                 }
                 else
@@ -130,16 +131,8 @@ namespace CriticalAngleStudios
         {
             this.GroundCheck();
 
-            if (this.isGrounded && !this.wasGrounded)
-            {
-                if (this.isCrouched)
-                    this.AirCrouchToCrouch();
-
-                var groundAngle = Vector3.Angle(Vector3.up, this.groundNormal);
-                var magnitude = this.rigidbody.mass * Mathf.Sin(groundAngle * Mathf.Deg2Rad) * -Physics.gravity.y;
-                var force = magnitude * this.groundNormal;
-                this.rigidbody.AddForce(-force);
-            }
+            if (this.isGrounded && !this.wasGrounded && this.isCrouched)
+                this.AirCrouchToCrouch();
 
             if (this.shouldJump && this.isGrounded && !this.isCrouched)
             {
@@ -211,7 +204,7 @@ namespace CriticalAngleStudios
             var look = this.inputControls.Player.Look.ReadValue<Vector2>();
             this.rotationInput.x -= look.y * this.cameraSensitivity;
             this.rotationInput.y += look.x * this.cameraSensitivity;
-
+            
             this.rotationInput.x = Mathf.Clamp(this.rotationInput.x, -90.0f, 90.0f);
         }
 
@@ -280,10 +273,8 @@ namespace CriticalAngleStudios
             this.shouldJump = false;
             if (!this.canJump) return;
 
-            var height = this.jumpHeight;
-
             // Simple calculation for jump force
-            var force = Mathf.Sqrt(height * -2.0f * Physics.gravity.y) - this.rigidbody.velocity.y;
+            var force = Mathf.Sqrt(this.jumpHeight * -2.0f * Physics.gravity.y) - this.rigidbody.velocity.y;
             this.rigidbody.AddForce(0.0f, force, 0.0f, ForceMode.VelocityChange);
         }
 
@@ -353,7 +344,7 @@ namespace CriticalAngleStudios
 
                 var lerp = Mathf.Lerp(this.cameraStandingHeight, this.cameraCrouchHeight,
                     EaseInOut(time / this.timeToCrouch));
-                this.camera.localPosition = new Vector3(0.0f, lerp, 0.0f);
+                this.camera.localPosition = new Vector3(0.0f, lerp);
 
                 time += Time.deltaTime;
 
@@ -389,7 +380,7 @@ namespace CriticalAngleStudios
 
                 var lerp = Mathf.Lerp(this.cameraCrouchHeight, this.cameraStandingHeight,
                     EaseInOut(time / this.timeToCrouch));
-                this.camera.localPosition = new Vector3(0.0f, lerp, 0.0f);
+                this.camera.localPosition = new Vector3(0.0f, lerp);
 
                 time += Time.deltaTime;
 
