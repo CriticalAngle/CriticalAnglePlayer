@@ -1,8 +1,8 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
+// ReSharper disable once CheckNamespace
 namespace CriticalAngleStudios
 {
     [RequireComponent(typeof(Rigidbody))]
@@ -12,18 +12,23 @@ namespace CriticalAngleStudios
         [SerializeField] private float walkSpeed = 6.0f;
         [SerializeField] private float crouchSpeed = 3.0f;
 
-        [Space] [SerializeField] private float timeToCrouch = 0.2f;
+        [Space] [SerializeField] private bool canCrouch = true;
+        [SerializeField] private float timeToCrouch = 0.2f;
         [SerializeField] private float cameraStandingHeight = 0.75f;
+        [SerializeField] private float colliderStandingHeight = 2.0f;
         [SerializeField] private float cameraCrouchHeight = 0.25f;
-
-        [Space] [SerializeField] private float maxSlopeAngle = 45.0f;
+        [SerializeField] private float colliderCrouchHeight = 1.5f;
+        
+        [Space] [SerializeField] private bool canJump = true;
+        [SerializeField] private bool canHoldJump = true;
         [SerializeField] private float jumpHeight = 1.0f;
+        
+        [Space] [SerializeField] private float maxSlopeAngle = 45.0f;
         [SerializeField] private float maxAirAcceleration = 1.0f;
         [SerializeField] private float airAcceleration = 10.0f;
         [SerializeField] private float rampSlideVelocity = 5.0f;
-        [SerializeField] private bool canHoldJump;
 
-        [Space] [SerializeField] private float cameraSensitivity = 1.0f;
+        [Space] [SerializeField] private float cameraSensitivity = 0.1f;
         [SerializeField] private new Transform camera;
         [SerializeField] private new CapsuleCollider collider;
         [SerializeField] private LayerMask groundMask;
@@ -38,7 +43,7 @@ namespace CriticalAngleStudios
         private Vector2 rotationInput;
         private bool crouchInput;
         private bool jumpInput;
-        
+
         private float desiredSpeed;
         private Vector3 groundNormal;
 
@@ -61,7 +66,7 @@ namespace CriticalAngleStudios
                 this.jumpInput = true;
             };
             this.inputControls.Player.Jump.canceled += _ => this.jumpInput = false;
-            
+
             this.inputControls.Player.Crouch.performed += _ => this.crouchInput = true;
             this.inputControls.Player.Crouch.canceled += _ => this.crouchInput = false;
 
@@ -82,29 +87,39 @@ namespace CriticalAngleStudios
             this.SetDesiredSpeed();
             this.SetDesiredRotation();
 
-            if (this.isGrounded)
-            {
-                if (this.canHoldJump && this.jumpInput)
-                    this.shouldJump = true;
-                
-                if (!this.isTransitioningCrouch)
-                {
-                    if (this.crouchInput
-                        && !this.isCrouched)
-                        this.StartCoroutine(this.Crouch());
-                    else if (!this.crouchInput
-                             && this.isCrouched)
-                        this.StartCoroutine(this.UnCrouch());
-                }
-            }
-            else
-            {
-                if (this.crouchInput && !this.isCrouched)
-                    this.AirCrouch();
-                else if (!this.crouchInput && this.isCrouched)
-                    this.AirUnCrouch();
+            if (this.canHoldJump && this.jumpInput && this.isGrounded)
+                this.shouldJump = true;
 
-                this.shouldJump = false;
+            if (this.canCrouch)
+            {
+                if (this.isGrounded)
+                {
+                    if (this.isTransitioningCrouch) return;
+
+                    switch (this.crouchInput)
+                    {
+                        case true when !this.isCrouched:
+                            this.StartCoroutine(this.Crouch());
+                            break;
+                        case false when this.isCrouched:
+                            this.StartCoroutine(this.UnCrouch());
+                            break;
+                    }
+                }
+                else
+                {
+                    switch (this.crouchInput)
+                    {
+                        case true when !this.isCrouched:
+                            this.AirCrouch();
+                            break;
+                        case false when this.isCrouched:
+                            this.AirUnCrouch();
+                            break;
+                    }
+
+                    this.shouldJump = false;
+                }
             }
 
             this.camera.transform.localEulerAngles = new Vector3(this.rotationInput.x, 0.0f, 0.0f);
@@ -263,6 +278,7 @@ namespace CriticalAngleStudios
         private void Jump()
         {
             this.shouldJump = false;
+            if (!this.canJump) return;
 
             var height = this.jumpHeight;
 
@@ -289,7 +305,7 @@ namespace CriticalAngleStudios
             if (Physics.SphereCast(this.transform.position + this.collider.center, this.collider.radius - 0.001f,
                     Physics.gravity.normalized, out _, 0.75f)) return;
 
-            this.collider.height = 2.0f;
+            this.collider.height = this.colliderStandingHeight;
             this.collider.center = Vector3.zero;
 
             if (this.isTransitioningCrouch)
@@ -301,15 +317,15 @@ namespace CriticalAngleStudios
 
         private void AirCrouchToCrouch()
         {
-            this.transform.position += new Vector3(0.0f, 0.5f);
-            this.collider.center = new Vector3(0.0f, -0.25f);
+            this.transform.position += new Vector3(0.0f, this.colliderStandingHeight - this.colliderCrouchHeight);
+            this.collider.center = new Vector3(0.0f, -(this.colliderStandingHeight - this.colliderCrouchHeight) / 2.0f);
             this.camera.localPosition = new Vector3(0.0f, this.cameraCrouchHeight);
         }
 
         private void CrouchToAirCrouch()
         {
-            this.transform.position -= new Vector3(0.0f, 0.5f);
-            this.collider.center = new Vector3(0.0f, 0.25f);
+            this.transform.position -= new Vector3(0.0f, this.colliderStandingHeight - this.colliderCrouchHeight);
+            this.collider.center = new Vector3(0.0f, (this.colliderStandingHeight - this.colliderCrouchHeight) / 2.0f);
             this.camera.localPosition = new Vector3(0.0f, this.cameraStandingHeight);
         }
 
@@ -344,8 +360,8 @@ namespace CriticalAngleStudios
                 yield return null;
             }
 
-            this.collider.height = 1.5f;
-            this.collider.center = new Vector3(0.0f, -0.25f);
+            this.collider.height = this.colliderCrouchHeight;
+            this.collider.center = new Vector3(0.0f, -(this.colliderStandingHeight - this.colliderCrouchHeight) / 2.0f);
 
             this.isTransitioningCrouch = false;
             this.isCrouched = true;
@@ -364,7 +380,7 @@ namespace CriticalAngleStudios
                     this.camera.localPosition = new Vector3(0.0f, this.cameraStandingHeight);
                     this.AirUnCrouch();
                 }
-                
+
                 if (this.shouldCancelCrouchTransition)
                 {
                     this.shouldCancelCrouchTransition = false;
@@ -380,7 +396,7 @@ namespace CriticalAngleStudios
                 yield return null;
             }
 
-            this.collider.height = 2.0f;
+            this.collider.height = this.colliderStandingHeight;
             this.collider.center = Vector3.zero;
 
             this.isTransitioningCrouch = false;

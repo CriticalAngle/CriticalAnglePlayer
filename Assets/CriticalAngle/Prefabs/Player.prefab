@@ -214,16 +214,20 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   walkSpeed: 6
-  crouchSpeed: 5
+  crouchSpeed: 3
+  canCrouch: 1
   timeToCrouch: 0.2
   cameraStandingHeight: 0.75
+  colliderStandingHeight: 2
   cameraCrouchHeight: 0.25
-  maxSlopeAngle: 45
+  colliderCrouchHeight: 1.5
+  canJump: 1
+  canHoldJump: 1
   jumpHeight: 1
+  maxSlopeAngle: 45
   maxAirAcceleration: 1
   airAcceleration: 10
   rampSlideVelocity: 5
-  canHoldJump: 0
   cameraSensitivity: 0.1
   camera: {fileID: 8762520286711253152}
   collider: {fileID: 8762520286767457737}

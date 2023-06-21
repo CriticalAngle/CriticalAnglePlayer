@@ -4170,17 +4170,9 @@ PrefabInstance:
   m_Modification:
     m_TransformParent: {fileID: 0}
     m_Modifications:
-    - target: {fileID: 8762520286711253152, guid: 6f96429434ae986428e1841e76d28bbb, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0.75
-      objectReference: {fileID: 0}
     - target: {fileID: 8762520286767457742, guid: 6f96429434ae986428e1841e76d28bbb, type: 3}
       propertyPath: m_Name
       value: Player
-      objectReference: {fileID: 0}
-    - target: {fileID: 8762520286767457743, guid: 6f96429434ae986428e1841e76d28bbb, type: 3}
-      propertyPath: canHoldJump
-      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 8762520286767457780, guid: 6f96429434ae986428e1841e76d28bbb, type: 3}
       propertyPath: m_RootOrder
