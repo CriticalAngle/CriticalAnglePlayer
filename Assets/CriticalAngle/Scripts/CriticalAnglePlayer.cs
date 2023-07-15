@@ -27,14 +27,13 @@ namespace CriticalAngleStudios
         [Space] [SerializeField] private float maxSlopeAngle = 45.0f;
         [SerializeField] private float maxAirAcceleration = 1.0f;
         [SerializeField] private float airAcceleration = 10.0f;
-        [SerializeField] private float rampSlideVelocity = 5.0f;
 
         [Space] [SerializeField] private float cameraSensitivity = 0.1f;
         [SerializeField] private new Transform camera;
-        [SerializeField] private new CapsuleCollider collider;
         [SerializeField] private LayerMask groundMask;
 
         private new Rigidbody rigidbody;
+        private new CapsuleCollider collider;
         private PlayerInputControls inputControls;
 
         public bool IsGrounded { get; private set; }
@@ -58,6 +57,16 @@ namespace CriticalAngleStudios
         private void Awake()
         {
             this.rigidbody = this.GetComponent<Rigidbody>();
+            this.collider = this.GetComponent<CapsuleCollider>();
+
+            this.collider.material = new PhysicMaterial
+            {
+                bounciness = 0.0f,
+                dynamicFriction = 0.0f,
+                staticFriction = 0.0f,
+                bounceCombine = PhysicMaterialCombine.Minimum,
+                frictionCombine = PhysicMaterialCombine.Minimum,
+            };
 
             this.inputControls = new PlayerInputControls();
             this.inputControls.Enable();
@@ -171,12 +180,7 @@ namespace CriticalAngleStudios
         private void GroundCheck()
         {
             // TODO Replication of Quake's undocumented feature of ramp sliding when exceeding a certain Y velocity
-            if (this.rigidbody.velocity.y > this.rampSlideVelocity)
-            {
-                this.IsGrounded = false;
-                return;
-            }
-            
+
             // Iterates through every object that we are colliding with to get the average ground normal
             this.IsGrounded = false;
             var combinedNormals = Vector3.zero;
