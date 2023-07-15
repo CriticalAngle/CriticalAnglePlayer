@@ -18,18 +18,3 @@ There is a Player prefab in `CriticalAngle\Prefabs` that has everything set up a
 The object's needed components are a Rigidbody, a Capsule Collider, and the CriticalAnglePlayer script.
 The script itself requires a reference to the camera, which is a child of the GameObject, and a ground mask.
 Any object that you want the player to walk on MUST have the same layer as the layer selected in the ground mask.
-
-## How it works
-It is recommended to read the following sections to gain an understanding of how the player interacts with the world.
-
-### Movement
-
-### Friction
-
-### Collisions
-
-### Crouching
-
-### Jumping
-
-### Air strafing
